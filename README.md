@@ -20,14 +20,14 @@ The results will be presented in a clear, structured report, helping analysts qu
 
 ## Key Features
 
-- **Multiple Input Types** — Support for IP addresses, domains, file hashes, CVE identifiers, and software packages with specific versions.
-- **Automated Data Collection** — Retrieval of relevant information from public threat intelligence sources, vulnerability databases, and security reports.
-- **AI-Powered Analysis** — Interpretation and summarization of collected data to identify potential threats, vulnerabilities, and relevant security context.
-- **Risk Assessment** — Evaluation of potential security risks based on available evidence, including severity and uncertainty.
-- **Structured Reports** — Generation of clear, readable reports containing findings, technical details, and recommended actions.
-- **Source References** — Links to original sources supporting the reported findings.
-- **Evidence and Hypothesis Separation** — Clear distinction between verified information, possible interpretations, and missing evidence.
-- **Human Oversight** — The system provides recommendations but leaves security decisions and actions to the user.
+- **Multiple Input Types** - Support for IP addresses, domains, file hashes, CVE identifiers, and software packages with specific versions.
+- **Automated Data Collection** - Retrieval of relevant information from public threat intelligence sources, vulnerability databases, and security reports.
+- **AI-Powered Analysis** - Interpretation and summarization of collected data to identify potential threats, vulnerabilities, and relevant security context.
+- **Risk Assessment** - Evaluation of potential security risks based on available evidence, including severity and uncertainty.
+- **Structured Reports** - Generation of clear, readable reports containing findings, technical details, and recommended actions.
+- **Source References** - Links to original sources supporting the reported findings.
+- **Evidence and Hypothesis Separation** - Clear distinction between verified information, possible interpretations, and missing evidence.
+- **Human Oversight** - The system provides recommendations but leaves security decisions and actions to the user.
 
 ## Limitations & Security
 
@@ -39,8 +39,8 @@ The tool is intended to support cybersecurity analysts rather than replace them.
 
 ## Expected Deliverables
 
-- **Working Prototype** — A functional application capable of analyzing supported threat indicators and software vulnerabilities.
-- **Architecture Documentation** — An overview of the system's components, data sources, and analysis workflow.
-- **Test Suite** — A collection of representative test cases, including ambiguous and conflicting scenarios.
-- **Evaluation Results** — A summary of the system's performance based on the defined evaluation criteria.
-- **Limitations Report** — Documentation of known limitations, potential risks, and areas for future improvement.
+- **Working Prototype** - A functional application capable of analyzing supported threat indicators and software vulnerabilities.
+- **Architecture Documentation** - An overview of the system's components, data sources, and analysis workflow.
+- **Test Suite** - A collection of representative test cases, including ambiguous and conflicting scenarios.
+- **Evaluation Results** - A summary of the system's performance based on the defined evaluation criteria.
+- **Limitations Report** - Documentation of known limitations, potential risks, and areas for future improvement.
