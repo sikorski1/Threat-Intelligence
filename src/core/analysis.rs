@@ -1,7 +1,13 @@
 use std::fmt::Write as _;
 use std::net::IpAddr;
+use std::time::Instant;
+
+use gpui_kit::BackgroundExecutor;
+use serde::Deserialize;
 
 use super::risk::{Confidence, RiskLevel};
+use crate::ai::provider::{self, Assessment};
+use crate::intelligence::virustotal::{self, Lookup};
 
 /// The kind of indicator the user submitted, detected from its format.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -61,12 +67,10 @@ impl IndicatorKind {
         }
     }
 
-    #[allow(dead_code)]
     pub fn is_ip(self) -> bool {
         matches!(self, Self::Ipv4 | Self::Ipv6)
     }
 
-    #[allow(dead_code)]
     pub fn is_hash(self) -> bool {
         matches!(self, Self::Md5 | Self::Sha1 | Self::Sha256)
     }
@@ -148,33 +152,111 @@ const fn step(label: &'static str, source: &'static str) -> PipelineStep {
 /// Returns the ordered analysis steps for the given indicator kind.
 pub fn pipeline(kind: IndicatorKind) -> Vec<PipelineStep> {
     let mut steps = vec![step("Detecting indicator type", "Local parser")];
-    match kind {
-        IndicatorKind::Cve => steps.extend([
-            step("Querying vulnerability database", "NVD"),
-            step("Checking known exploited vulnerabilities", "CISA KEV"),
-        ]),
-        IndicatorKind::Package => steps.extend([
-            step("Querying open-source advisories", "OSV.dev"),
-            step("Querying vulnerability database", "NVD"),
-            step("Checking known exploited vulnerabilities", "CISA KEV"),
-        ]),
-        _ => steps.extend([
+    if kind.is_ip() || kind.is_hash() || kind == IndicatorKind::Domain {
+        steps.extend([
             step("Querying threat intelligence", "VirusTotal"),
-            step("Checking local history", "SQLite cache"),
-        ]),
+            step("Generating AI report", "AI analyst"),
+        ]);
     }
-    steps.push(step("Generating AI report", "AI analyst"));
     steps
 }
 
-/// Runs the analysis backend for an indicator.
-///
-/// Replace this stub once the `intelligence`, `storage`, and `ai` modules are wired up.
-pub async fn run(_indicator: String, _kind: IndicatorKind) -> Result<Report, String> {
-    Err("Backend intelligence sources and AI provider are not connected yet.".to_string())
+/// Fetches source evidence before generating a report with the model.
+pub async fn run(
+    indicator: String,
+    kind: IndicatorKind,
+    executor: BackgroundExecutor,
+    on_lookup_completed: impl FnOnce(),
+) -> Result<Report, String> {
+    let started = Instant::now();
+    let lookup_indicator = indicator.clone();
+    let lookup = executor
+        .spawn(async move { virustotal::lookup(&lookup_indicator, kind) })
+        .await?;
+
+    on_lookup_completed();
+    executor
+        .spawn(async move {
+            let assessment = provider::assess(&indicator, kind, &lookup)?;
+            Ok(build_report(
+                indicator,
+                kind,
+                lookup,
+                assessment,
+                started.elapsed().as_millis() as u64,
+            ))
+        })
+        .await
 }
 
-#[derive(Clone, Debug)]
+fn build_report(
+    indicator: String,
+    kind: IndicatorKind,
+    lookup: Lookup,
+    mut assessment: Assessment,
+    elapsed_ms: u64,
+) -> Report {
+    let mut evidence = Vec::new();
+    let mut has_scanner_evidence = false;
+    if let Some(attributes) = lookup.attributes {
+        if let Some(stats) = attributes.last_analysis_stats {
+            let count = |category: &str| stats.get(category).copied().unwrap_or_default();
+            let (malicious, suspicious, harmless, undetected) = (
+                count("malicious"),
+                count("suspicious"),
+                count("harmless"),
+                count("undetected"),
+            );
+            let total: u64 = stats.values().copied().map(u64::from).sum();
+            has_scanner_evidence = malicious > 0 || suspicious > 0 || harmless > 0;
+            evidence.push(Evidence {
+                statement: format!(
+                    "{total} scanner results: {malicious} malicious, {suspicious} suspicious, {harmless} harmless, {undetected} undetected."
+                ),
+                source: "VirusTotal".into(),
+            });
+        }
+        if let Some(reputation) = attributes.reputation {
+            evidence.push(Evidence {
+                statement: format!("Community reputation score: {reputation}."),
+                source: "VirusTotal".into(),
+            });
+        }
+        if !has_scanner_evidence {
+            assessment.gaps.insert(
+                0,
+                "VirusTotal has no scanner verdict for this indicator.".into(),
+            );
+        }
+    } else {
+        assessment
+            .gaps
+            .insert(0, "VirusTotal has no report for this indicator.".into());
+    }
+    let score = assessment.score.filter(|_| has_scanner_evidence);
+
+    Report {
+        indicator,
+        kind,
+        risk: score.map_or(RiskLevel::Unknown, RiskLevel::from_score),
+        score,
+        confidence: score.map_or(Confidence::Low, |_| assessment.confidence),
+        verdict: assessment.verdict,
+        summary: assessment.summary,
+        findings: assessment.findings,
+        evidence,
+        hypotheses: assessment.hypotheses,
+        gaps: assessment.gaps,
+        recommendations: assessment.recommendations,
+        sources: vec![SourceRef {
+            name: "VirusTotal".into(),
+            url: lookup.source_url,
+        }],
+        elapsed_ms,
+    }
+}
+
+#[derive(Clone, Debug, Deserialize)]
 pub struct Finding {
     pub title: String,
     pub detail: String,
@@ -200,7 +282,7 @@ pub struct Report {
     pub indicator: String,
     pub kind: IndicatorKind,
     pub risk: RiskLevel,
-    pub score: u8,
+    pub score: Option<u8>,
     pub confidence: Confidence,
     pub verdict: String,
     pub summary: String,
@@ -218,13 +300,11 @@ impl Report {
     pub fn to_markdown(&self) -> String {
         let mut md = String::new();
         let _ = writeln!(md, "# Threat report: `{}` ({})\n", self.indicator, self.kind.label());
-        let _ = writeln!(
-            md,
-            "**Risk:** {} ({}/100) · **Confidence:** {}\n",
-            self.risk.label(),
-            self.score,
-            self.confidence.label()
-        );
+        let _ = write!(md, "**Risk:** {}", self.risk.label());
+        if let Some(score) = self.score {
+            let _ = write!(md, " ({score}/100)");
+        }
+        let _ = writeln!(md, " · **Confidence:** {}\n", self.confidence.label());
         let _ = writeln!(md, "**Verdict:** {}\n", self.verdict);
         let _ = writeln!(md, "## Summary\n{}\n", self.summary);
         let _ = writeln!(md, "## Findings");
@@ -259,6 +339,59 @@ impl Report {
 mod tests {
     use super::IndicatorKind::*;
     use super::*;
+
+    #[test]
+    fn displays_only_implemented_indicator_steps() {
+        let sources: Vec<_> = pipeline(Domain)
+            .into_iter()
+            .map(|step| step.source)
+            .collect();
+        assert_eq!(sources, ["Local parser", "VirusTotal", "AI analyst"]);
+    }
+
+    #[test]
+    fn reports_unknown_risk_when_scanners_have_no_opinion() {
+        let attributes =
+            serde_json::from_str(r#"{"last_analysis_stats":{"undetected":5}}"#).unwrap();
+        let lookup = Lookup {
+            source_url: "https://www.virustotal.com/gui/domain/example.com".into(),
+            attributes: Some(attributes),
+        };
+        let assessment = Assessment {
+            score: Some(73),
+            confidence: Confidence::High,
+            verdict: String::new(),
+            summary: String::new(),
+            findings: vec![],
+            hypotheses: vec![],
+            gaps: vec![],
+            recommendations: vec![],
+        };
+        let report = build_report("example.com".into(), Domain, lookup, assessment, 0);
+
+        assert_eq!(report.risk, RiskLevel::Unknown);
+        assert_eq!(report.score, None);
+        assert_eq!(report.confidence, Confidence::Low);
+        assert!(report.evidence[0].statement.contains("5 undetected"));
+        assert!(!report.to_markdown().contains("/100"));
+    }
+
+    #[test]
+    #[ignore = "requires a VirusTotal API key and a running local Ollama model"]
+    fn live_virustotal_and_ollama() {
+        let _ = dotenvy::dotenv();
+        let indicator = "8.8.8.8";
+        let lookup = virustotal::lookup(indicator, Ipv4).unwrap();
+        let assessment = provider::assess(indicator, Ipv4, &lookup).unwrap();
+        let report = build_report(indicator.into(), Ipv4, lookup, assessment, 0);
+
+        assert!(!report.summary.trim().is_empty());
+        assert!(report.evidence[0].statement.contains("scanner results"));
+        assert_eq!(
+            report.sources[0].url,
+            "https://www.virustotal.com/gui/ip-address/8.8.8.8"
+        );
+    }
 
     #[test]
     fn detects_indicator_kinds() {

@@ -76,24 +76,26 @@ fn verdict_and_summary_card(report: &Report, actions: impl IntoElement) -> Div {
                             pill(format!("{} risk", report.risk.label()).to_uppercase(), risk_color)
                                 .font_weight(FontWeight::BOLD),
                         )
-                        .child(
-                            h_flex()
-                                .items_end()
-                                .gap_1()
-                                .child(
-                                    mono(report.score.to_string())
-                                        .text_size(px(36.0))
-                                        .line_height(px(40.0))
-                                        .font_weight(FontWeight::BOLD)
-                                        .text_color(risk_color),
-                                )
-                                .child(
-                                    mono("/100")
-                                        .pb_1()
-                                        .text_size(px(text::SMALL))
-                                        .text_color(colors::text_muted()),
-                                ),
-                        )
+                        .when_some(report.score, |el, score| {
+                            el.child(
+                                h_flex()
+                                    .items_end()
+                                    .gap_1()
+                                    .child(
+                                        mono(score.to_string())
+                                            .text_size(px(36.0))
+                                            .line_height(px(40.0))
+                                            .font_weight(FontWeight::BOLD)
+                                            .text_color(risk_color),
+                                    )
+                                    .child(
+                                        mono("/100")
+                                            .pb_1()
+                                            .text_size(px(text::SMALL))
+                                            .text_color(colors::text_muted()),
+                                    ),
+                            )
+                        })
                         .child(caption(format!(
                             "Confidence: {} · {:.1} s",
                             report.confidence.label(),

@@ -65,7 +65,7 @@ pub(crate) struct Dashboard {
     phase: Phase,
     /// Incremented for each run; used to restart entry animations.
     run_id: usize,
-    /// The running analysis task. Dropping it cancels the run.
+    /// Dropping the task stops the pipeline after any request in flight.
     task: Option<Task<Option<()>>>,
     last_query: Option<String>,
     copied: bool,
@@ -168,20 +168,32 @@ impl Dashboard {
         });
 
         self.task = Some(cx.spawn(async move |this, cx| {
-            let result = analysis::run(raw, kind).await;
+            let executor = cx.background_executor().clone();
+            let result = analysis::run(raw, kind, executor, || {
+                let _ = this.update(cx, |this, cx| {
+                    if let Phase::Loading(run) = &mut this.phase {
+                        run.steps[1].status = StepStatus::Done;
+                        run.steps[1].elapsed_ms = Some(run.started.elapsed().as_millis() as u64);
+                        run.steps[2].status = StepStatus::Running;
+                    }
+                    cx.notify();
+                });
+            })
+            .await;
             this.update(cx, |this, cx| {
                 match result {
-                    Ok(mut report) => {
-                        if let Phase::Loading(run) = &this.phase {
-                            report.elapsed_ms = run.started.elapsed().as_millis() as u64;
-                        }
+                    Ok(report) => {
                         this.phase = Phase::Done(Rc::new(report));
                     }
                     Err(message) => {
                         if let Phase::Loading(mut run) =
                             std::mem::replace(&mut this.phase, Phase::Idle)
                         {
-                            if let Some(step) = run.steps.get_mut(1) {
+                            if let Some(step) = run
+                                .steps
+                                .iter_mut()
+                                .find(|step| step.status == StepStatus::Running)
+                            {
                                 step.status = StepStatus::Failed;
                             }
                             this.phase = Phase::Failed { run, message };

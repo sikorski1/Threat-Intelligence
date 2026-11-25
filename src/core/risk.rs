@@ -1,5 +1,8 @@
+use serde::Deserialize;
+
 /// Overall risk classification of an analyzed indicator.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 #[allow(dead_code)]
 pub enum RiskLevel {
     Critical,
@@ -11,7 +14,6 @@ pub enum RiskLevel {
 
 impl RiskLevel {
     /// Maps a 0-100 risk score onto a level.
-    #[allow(dead_code)]
     pub fn from_score(score: u8) -> Self {
         match score {
             90..=u8::MAX => Self::Critical,
@@ -47,8 +49,8 @@ impl RiskLevel {
 }
 
 /// How confident the analysis is in its own verdict.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[allow(dead_code)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum Confidence {
     High,
     Medium,

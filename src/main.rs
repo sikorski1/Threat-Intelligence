@@ -1,4 +1,6 @@
+mod ai;
 mod core;
+mod intelligence;
 mod ui;
 
 use gpui_kit::component::TitleBar;
@@ -7,6 +9,11 @@ use gpui_kit::{AppContext, Bounds, WindowBounds, WindowOptions, px, size};
 use ui::dashboard::Dashboard;
 
 fn main() {
+    if let Err(error) = dotenvy::dotenv()
+        && !error.not_found()
+    {
+        eprintln!("Could not load .env. Check its format.");
+    }
     gpui_kit::application()
         .with_assets(gpui_kit::assets::Assets)
         .run(|cx| {

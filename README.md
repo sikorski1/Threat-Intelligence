@@ -18,6 +18,14 @@ Users will be able to submit a suspicious indicator or a potentially vulnerable 
 
 The results will be presented in a clear, structured report, helping analysts quickly understand potential threats, assess their severity, and identify possible next steps.
 
+## Run VirusTotal analysis
+
+1. Copy `.env.example` to `.env` and set `VIRUSTOTAL_API_KEY`.
+2. Start Ollama locally on port `11434` and run `ollama pull qwen3.5:9b`. Set `OLLAMA_MODEL` in `.env` to use another installed model.
+3. Run `cargo run` and analyze an IP address, domain, or MD5, SHA-1, or SHA-256 file hash.
+
+The app retrieves existing VirusTotal reports and sends selected fields to Ollama. The report includes VirusTotal scan counts and a link to the source. Indicators without usable scanner evidence receive an unknown risk rating. CVE and package analysis are planned.
+
 ## Key Features
 
 - **Multiple Input Types** - Support for IP addresses, domains, file hashes, CVE identifiers, and software packages with specific versions.
